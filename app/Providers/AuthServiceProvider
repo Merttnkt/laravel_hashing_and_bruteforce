@@ -1,0 +1,45 @@
+<?php
+namespace App\Providers;
+
+use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Auth\Events\Failed;
+use Illuminate\Auth\Events\Login;
+use Carbon\Carbon;
+use App\Models\Note;
+use App\Policies\NotePolicy;
+
+class AuthServiceProvider extends ServiceProvider
+{
+    protected $policies = [
+        Note::class => NotePolicy::class,
+    ];
+
+    public function boot()
+    {
+        $this->registerPolicies();
+
+        // Başarısız giriş denemesini dinle
+        $this->app['events']->listen(Failed::class, function ($event) {
+            if (isset($event->user) && $event->user) {
+                $user = $event->user;
+                $user->failed_login_attempts += 1;
+                
+                // 3 başarısız denemeden sonra hesabı bloke et
+                if ($user->failed_login_attempts >= 3) {
+                    $user->blocked_until = Carbon::now()->addMinutes(30);
+                }
+                
+                $user->save();
+            }
+        });
+
+        // Başarılı girişte sayacı sıfırla
+        $this->app['events']->listen(Login::class, function ($event) {
+            $user = $event->user;
+            $user->failed_login_attempts = 0;
+            $user->blocked_until = null;
+            $user->save();
+        });
+    }
+}
